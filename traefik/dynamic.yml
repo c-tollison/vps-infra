@@ -1,0 +1,9 @@
+http:
+    middlewares:
+        secure-headers:
+            headers:
+                stsSeconds: 63072000
+                stsIncludeSubdomains: true
+                stsPreload: false
+                contentTypeNosniff: true
+                referrerPolicy: strict-origin-when-cross-origin
