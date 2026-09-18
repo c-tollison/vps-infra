@@ -11,8 +11,14 @@ services:
             - postgres_password
         volumes:
             - postgres_data:/var/lib/postgresql
+        # Only on `db`. Apps that need Postgres join `db`
         networks:
-            - vps
+            - db
+        security_opt:
+            - no-new-privileges:true
+        # Shared by every app. Raise this if pg_stat_activity shows pressure;
+        # shared_buffers defaults to 128MB so 512m leaves room for connections.
+        mem_limit: 512m
         healthcheck:
             test:
                 [
@@ -38,6 +44,7 @@ services:
             - socket
         security_opt:
             - no-new-privileges:true
+        mem_limit: 64m
 
     traefik:
         image: traefik:v3.7
@@ -79,6 +86,7 @@ services:
             - NET_BIND_SERVICE
         security_opt:
             - no-new-privileges:true
+        mem_limit: 256m
 
 secrets:
     postgres_password:
@@ -91,5 +99,8 @@ volumes:
 networks:
     vps:
         name: vps
+    db:
+        name: db
+        internal: true
     socket:
         internal: true

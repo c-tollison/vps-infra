@@ -1,7 +1,7 @@
 # vps-infra
 
-Shared Docker network, Traefik reverse proxy with automatic HTTPS, and a
-single Postgres 18 server for my VPS.
+Shared Docker networks, Traefik reverse proxy with automatic HTTPS, a single
+Postgres 18 server, and the deploy script GitHub Actions calls, for my VPS.
 
 ## Setup
 
@@ -29,13 +29,14 @@ One role + one database per app. The superuser in `.env` is for admin
 scripts/create-db.sh myapp
 ```
 
-In the app's `docker-compose.yml`, join the shared network and opt in to
-Traefik. Don't publish ports.
+In the app's `docker-compose.yml`, join `vps` for anything Traefik routes to
+and `db` for anything that talks to Postgres. A static web container joins
+`vps` only, so it cannot reach the database. Don't publish ports.
 
 ```yaml
 services:
-    app:
-        networks: [vps]
+    api:
+        networks: [vps, db]
         labels:
             - "traefik.enable=true"
             - "traefik.http.routers.app.rule=Host(`app.coji-dev.com`)"
@@ -44,6 +45,8 @@ services:
 
 networks:
     vps:
+        external: true
+    db:
         external: true
 ```
 
@@ -58,16 +61,43 @@ To verify, run `traefik/whoami` with the labels above on a test subdomain,
 `curl -I http://…` should 308 and `curl https://…` should return a valid cert,
 then remove it.
 
+## Deploys
+
+Each app's GitHub workflow builds images, pushes them to GHCR, then runs
+`ssh vps sha-<commit>`. The ssh key it uses is locked to `scripts/deploy.sh`
+in `~/.ssh/authorized_keys`:
+
+```
+restrict,command="/home/<user>/vps-infra/scripts/deploy.sh <app>" ssh-ed25519 AAAA... github-actions-<app>
+```
+
+`command=` makes ssh run the script instead of whatever the workflow asked
+for; the request lands in `SSH_ORIGINAL_COMMAND`. `deploy.sh` accepts only a
+`sha-<hex>` tag, then in `~/<app>/` pulls that tag, writes it to `.env` as
+`IMAGE_TAG`, and runs `docker compose up -d`. A stolen key can deploy a tag
+of its own app and nothing else.
+
+Per app: one key, one `authorized_keys` line with the app's name, one
+`~/<app>/` holding its `docker-compose.yml` and `.env`. The app's compose
+file reads `${IMAGE_TAG}` for its images. To roll back, set `IMAGE_TAG` to
+an older tag and `docker compose up -d`.
+
 ## Notes
 
+- **Networks:** `vps` is Traefik and the containers it routes to. `db` is
+  Postgres and the containers that need it; it is `internal`, so nothing on
+  it alone can reach the internet. `socket` is Traefik and the socket proxy.
 - **Firewall:** Docker published ports bypass ufw. `daemon.json` sets
   `"ip": "127.0.0.1"` so a publish without an explicit host address binds
   to localhost. Only Traefik publishes `0.0.0.0` and `[::]` on 80/443. Postgres
-  has no `ports:`; reach it via `docker compose exec postgres psql` or an SSH
-  tunnel. Dashboard and API are disabled.
+  has no `ports:` and is only on `db`; reach it via
+  `docker compose exec postgres psql`. Dashboard and API are disabled.
 - **Certificates:** Let's Encrypt, TLS-ALPN-01 on 443, auto-renewed. Stored in
   the `letsencrypt` volume; losing it just reissues.
 - **Hardening:** Traefik talks to Docker through `docker-socket-proxy`
   (read-only, containers only, isolated network), runs read-only with all
   capabilities dropped except `NET_BIND_SERVICE`. `traefik/dynamic.yml`
-  adds HSTS, nosniff and a referrer policy to every response.
+  adds HSTS, nosniff and a referrer policy to every response. Every service
+  has `no-new-privileges` and a memory limit.
+- **Backups:** `scripts/backup.sh` dumps every database with `pg_dumpall`
+  and keeps the last 3 in `backups/`.
