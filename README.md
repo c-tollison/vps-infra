@@ -74,13 +74,14 @@ restrict,command="/home/<user>/vps-infra/scripts/deploy.sh <app>" ssh-ed25519 AA
 `command=` makes ssh run the script instead of whatever the workflow asked
 for; the request lands in `SSH_ORIGINAL_COMMAND`. `deploy.sh` accepts only a
 `sha-<hex>` tag, then in `~/<app>/` pulls that tag, writes it to `.env` as
-`IMAGE_TAG`, and runs `docker compose up -d`. A stolen key can deploy a tag
-of its own app and nothing else.
+`IMAGE_TAG`, runs `docker compose up -d`, and deletes every image no
+container is using. A stolen key can deploy a tag of its own app and nothing
+else.
 
 Per app: one key, one `authorized_keys` line with the app's name, one
 `~/<app>/` holding its `docker-compose.yml` and `.env`. The app's compose
 file reads `${IMAGE_TAG}` for its images. To roll back, set `IMAGE_TAG` to
-an older tag and `docker compose up -d`.
+an older tag and `docker compose up -d`; compose pulls the tag from GHCR.
 
 ## Notes
 

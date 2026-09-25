@@ -22,5 +22,5 @@ chmod 600 .env.tmp
 mv .env.tmp .env
 
 docker compose up -d --remove-orphans
-docker image prune -af --filter "until=168h" >/dev/null
+docker image prune -af >/dev/null
 docker compose ps
